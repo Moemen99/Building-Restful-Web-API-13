@@ -203,4 +203,237 @@ public class LoginRequestValidator : AbstractValidator<LoginRequest>
 
 This implementation provides a foundation for a secure authentication system. The next phase will involve creating the controller and implementing the JWT token generation logic.
 
-Would you like me to expand on any part of this documentation or add additional sections?
+# Authentication Controller Implementation Guide
+
+## Overview
+This guide covers the implementation of an authentication controller for handling JWT token generation through a secure login endpoint.
+
+## Project Structure
+```plaintext
+YourProject/
+├── Controllers/
+│   └── AuthController.cs
+├── Contracts/
+│   └── Authentication/
+│       ├── LoginRequest.cs
+│       └── LoginRequestValidator.cs
+└── Configuration/
+    └── DependencyInjection.cs
+```
+
+## 1. Authentication Controller
+```csharp
+[Route("auth")]
+public class AuthController : ControllerBase
+{
+    private readonly IAuthService _authService;
+
+    public AuthController(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    [HttpPost("")]
+    public async Task<IActionResult> LoginAsync(
+        LoginRequest request,
+        CancellationToken cancellationToken)
+    {
+        var authResult = await _authService.GetTokenAsync(
+            request.Email,
+            request.Password,
+            cancellationToken);
+
+        return authResult is null 
+            ? BadRequest("Invalid email or password")
+            : Ok(authResult);
+    }
+}
+```
+
+## 2. Login Request Models
+
+### Request Model
+```csharp
+public record LoginRequest(
+    string Email,
+    string Password
+);
+```
+
+### Request Validator
+```csharp
+public class LoginRequestValidator : AbstractValidator<LoginRequest>
+{
+    public LoginRequestValidator()
+    {
+        RuleFor(x => x.Email)
+            .NotEmpty()
+            .EmailAddress();
+
+        RuleFor(x => x.Password)
+            .NotEmpty()
+            .MinimumLength(8);
+    }
+}
+```
+
+## 3. Dependency Injection Configuration
+
+```csharp
+public static class DependencyInjection
+{
+    public static IServiceCollection AddDependencies(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddControllers();
+        services.AddAuthConfig();
+
+        var connectionString = configuration.GetConnectionString("DefaultConnection") 
+            ?? throw new InvalidOperationException(
+                "Connection string 'DefaultConnection' not found.");
+
+        services.AddDbContext<ApplicationDbContext>(options => 
+            options.UseSqlServer(connectionString));
+
+        services.AddSwaggerServices()
+                .AddMapsterConfig()
+                .AddFluentValidationConfig();
+
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IPollService, PollService>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddAuthConfig(
+        this IServiceCollection services)
+    {
+        services.AddIdentity<ApplicationUser, IdentityRole>()
+                .AddEntityFrameworkStores<ApplicationDbContext>();
+        return services;
+    }
+}
+```
+
+## Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant AuthController
+    participant AuthService
+    participant Database
+    
+    Client->>AuthController: POST /auth
+    Note over Client,AuthController: {email, password}
+    AuthController->>AuthService: GetTokenAsync()
+    AuthService->>Database: Validate Credentials
+    
+    alt Invalid Credentials
+        Database-->>AuthService: Invalid
+        AuthService-->>AuthController: null
+        AuthController-->>Client: 400 Bad Request
+    else Valid Credentials
+        Database-->>AuthService: Valid
+        AuthService-->>AuthController: AuthResponse
+        AuthController-->>Client: 200 OK with Token
+    end
+```
+
+## Security Considerations
+
+### 1. Endpoint Security
+- Uses POST method for secure data transmission
+- Credentials sent in request body, not query string
+- Implements input validation
+- Returns appropriate status codes
+
+### 2. Request Validation
+- Email format validation
+- Password minimum length requirement
+- Required field validation
+- Custom error messages
+
+## API Endpoint Details
+
+| Aspect | Detail |
+|--------|---------|
+| Route | `/auth` |
+| Method | POST |
+| Request Body | `LoginRequest` |
+| Success Response | 200 OK with `AuthResponse` |
+| Error Response | 400 Bad Request |
+
+## Implementation Notes
+
+1. **Controller Design**
+   - Minimal route configuration (`/auth`)
+   - Clean dependency injection
+   - Async/await pattern
+   - Cancellation token support
+
+2. **Request Handling**
+   - Record type for immutable request data
+   - Fluent validation for request validation
+   - Clear error messages
+
+3. **Dependencies**
+   - Identity configuration
+   - Entity Framework stores
+   - Service registration
+
+## Testing the Endpoint
+
+```http
+POST /auth
+Content-Type: application/json
+
+{
+    "email": "user@example.com",
+    "password": "Password123!"
+}
+```
+
+Expected Responses:
+```json
+// Success (200 OK)
+{
+    "id": "...",
+    "email": "user@example.com",
+    "firstName": "...",
+    "lastName": "...",
+    "token": "...",
+    "expiresIn": 3600
+}
+
+// Error (400 Bad Request)
+{
+    "message": "Invalid email or password"
+}
+```
+
+## Next Steps
+
+1. **JWT Token Generation**
+   - Implement token generation logic
+   - Configure JWT parameters
+   - Add token validation
+
+2. **Error Handling**
+   - Add global exception handling
+   - Implement detailed error responses
+   - Add logging
+
+3. **Security Enhancements**
+   - Rate limiting
+   - Account lockout
+   - Password complexity rules
+
+
+
+
+
+
+
+
