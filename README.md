@@ -610,6 +610,202 @@ graph TD
 
 
 
+# JWT Authentication Setup and Implementation Guide
 
+## Overview
+This guide covers the final setup steps for JWT authentication, including middleware configuration, authorization attributes, and service modifications.
+
+## 1. Authentication Configuration
+```csharp
+private static IServiceCollection AddAuthConfig(this IServiceCollection services)
+{
+    services.AddSingleton<IJwtProvider, JwtProvider>();
+    services.AddIdentity<ApplicationUser, IdentityRole>()
+            .AddEntityFrameworkStores<ApplicationDbContext>();
+
+    services.AddAuthentication(options => 
+    {
+        // Default scheme configuration for [Authorize] attribute
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options => 
+    {
+        options.SaveToken = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes("J7MfAb4WcAIMkkigVtIepIILOVJEjAcB")),
+            ValidIssuer = "SurveyBasketApp",
+            ValidAudience = "SurveyBasketApp users"
+        };
+    });
+
+    return services;
+}
+```
+
+## 2. Protected Controller Implementation
+
+### Controller-Level Authorization
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+[Authorize]
+public class PollsController : ControllerBase
+{
+    // All endpoints require authorization
+}
+```
+
+### Action-Level Authorization
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class PollsController : ControllerBase
+{
+    [HttpGet("")]
+    [Authorize]
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
+    {
+        // Only this endpoint requires authorization
+    }
+}
+```
+
+## 3. Updated Authentication Service
+
+```csharp
+public class AuthService : IAuthService
+{
+    private readonly IJwtProvider _jwtProvider;
+    private readonly UserManager<ApplicationUser> _userManager;
+
+    public AuthService(
+        UserManager<ApplicationUser> userManager,
+        IJwtProvider jwtProvider)
+    {
+        _jwtProvider = jwtProvider;
+        _userManager = userManager;
+    }
+
+    public async Task<AuthResponse?> GetTokenAsync(
+        string email,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.FindByEmailAsync(email);
+        if (user is null)
+            return null;
+
+        var isValidPassword = await _userManager.CheckPasswordAsync(user, password);
+        if (!isValidPassword)
+            return null;
+
+        var (token, expiresIn) = _jwtProvider.GenerateToken(user);
+        return new AuthResponse(
+            user.Id,
+            user.Email,
+            user.FirstName,
+            user.LastName,
+            token,
+            expiresIn * 60);
+    }
+}
+```
+
+## Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant AuthController
+    participant Protected Endpoint
+    participant Auth Service
+    
+    Client->>AuthController: POST /auth
+    AuthController->>Auth Service: GetTokenAsync()
+    Auth Service-->>AuthController: JWT Token
+    AuthController-->>Client: Token Response
+    
+    Client->>Protected Endpoint: Request with Bearer Token
+    Protected Endpoint->>Protected Endpoint: Validate Token
+    alt Valid Token
+        Protected Endpoint-->>Client: 200 OK with Data
+    else Invalid Token
+        Protected Endpoint-->>Client: 401 Unauthorized
+    end
+```
+
+## Token Validation Parameters
+
+| Parameter | Description | Value |
+|-----------|-------------|--------|
+| ValidateIssuerSigningKey | Validates the signing key | true |
+| ValidateIssuer | Validates token issuer | true |
+| ValidateAudience | Validates token audience | true |
+| ValidateLifetime | Checks token expiration | true |
+| IssuerSigningKey | Key for token validation | Symmetric Key |
+| ValidIssuer | Expected issuer | "SurveyBasketApp" |
+| ValidAudience | Expected audience | "SurveyBasketApp users" |
+
+## Testing in Postman
+
+### 1. Authentication Request
+```http
+POST /auth
+Content-Type: application/json
+
+{
+    "email": "user@example.com",
+    "password": "password123"
+}
+```
+
+### 2. Using the Token
+1. Copy the token from authentication response
+2. In protected endpoint:
+   - Select "Bearer Token" from Authorization type
+   - Paste the token
+   - Send request
+
+## Security Considerations
+
+1. **Token Validation**
+   - Multiple validation parameters enabled
+   - Signature verification
+   - Expiration checking
+   - Issuer and audience validation
+
+2. **Authorization Levels**
+   - Controller-level authorization
+   - Action-level authorization
+   - Flexible permission control
+
+3. **Token Storage**
+   - Secure token storage enabled
+   - Bearer token transmission
+   - Standard authorization header
+
+## Implementation Notes
+
+1. **Configuration**
+   - JWT Bearer scheme as default
+   - Token saving enabled
+   - Comprehensive validation parameters
+
+2. **Authorization**
+   - Attribute-based authorization
+   - Granular control per endpoint
+   - Standard Bearer token usage
+
+3. **Integration**
+   - Identity integration
+   - Entity Framework stores
+   - JWT provider integration
 
 
