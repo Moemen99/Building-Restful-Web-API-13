@@ -433,6 +433,182 @@ Expected Responses:
 
 
 
+# JWT Token Generation Implementation Guide
+
+## Overview
+This guide covers the implementation of JWT token generation in an ASP.NET Core application, including the provider interface, implementation, and configuration.
+
+## Project Structure
+```plaintext
+YourProject/
+├── Authentication/
+│   ├── IJwtProvider.cs
+│   └── JwtProvider.cs
+└── Configuration/
+    └── DependencyInjection.cs
+```
+
+## 1. Required NuGet Package
+```xml
+<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+```
+
+## 2. JWT Provider Interface
+
+```csharp
+public interface IJwtProvider
+{
+    (string token, int expiresIn) GenerateToken(ApplicationUser user);
+}
+```
+
+## 3. JWT Provider Implementation
+
+```csharp
+public class JwtProvider : IJwtProvider
+{
+    public (string token, int expiresIn) GenerateToken(ApplicationUser user)
+    {
+        // 1. Define claims
+        Claim[] claims = [
+            new(JwtRegisteredClaimNames.Sub, user.Id),
+            new(JwtRegisteredClaimNames.Email, user.Email!),
+            new(JwtRegisteredClaimNames.GivenName, user.FirstName),
+            new(JwtRegisteredClaimNames.FamilyName, user.LastName),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        ];
+
+        // 2. Create security key
+        var symmetricSecurityKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes("J7MfAb4WcAIMkkigVtIepIILOVJEjAcB"));
+
+        // 3. Create signing credentials
+        var signingCredentials = new SigningCredentials(
+            symmetricSecurityKey, 
+            SecurityAlgorithms.HmacSha256);
+
+        // 4. Set token parameters
+        var expiresIn = 30; // hours
+        var expirationDate = DateTime.UtcNow.AddMinutes(expiresIn * 60);
+
+        // 5. Generate token
+        var token = new JwtSecurityToken(
+            issuer: "SurveyBasketApp",
+            audience: "SurveyBasketApp users",
+            claims: claims,
+            expires: expirationDate,
+            signingCredentials: signingCredentials
+        );
+
+        return (
+            token: new JwtSecurityTokenHandler().WriteToken(token),
+            expiresIn: expiresIn
+        );
+    }
+}
+```
+
+## 4. Dependency Registration
+
+```csharp
+private static IServiceCollection AddAuthConfig(this IServiceCollection services)
+{
+    services.AddSingleton<IJwtProvider, JwtProvider>();
+    services.AddIdentity<ApplicationUser, IdentityRole>()
+            .AddEntityFrameworkStores<ApplicationDbContext>();
+    return services;
+}
+```
+
+## JWT Token Structure
+
+```mermaid
+graph TD
+    A[JWT Token] --> B[Header]
+    A --> C[Payload]
+    A --> D[Signature]
+    B --> E[Algorithm: HS256]
+    B --> F[Type: JWT]
+    C --> G[Claims]
+    G --> H[Subject/ID]
+    G --> I[Email]
+    G --> J[Given Name]
+    G --> K[Family Name]
+    G --> L[JWT ID]
+    D --> M[HMACSHA256<br>Base64UrlEncode]
+```
+
+## Claims Structure
+
+| Claim Type | Description | Example |
+|------------|-------------|---------|
+| `sub` | Subject (User ID) | `"123"` |
+| `email` | User's email | `"user@example.com"` |
+| `given_name` | First name | `"John"` |
+| `family_name` | Last name | `"Doe"` |
+| `jti` | Unique token ID | `"guid"` |
+
+## Security Components
+
+### 1. Symmetric Security Key
+- Used for both encoding and decoding
+- Must be kept secure
+- Recommended length: 256 bits
+- UTF8 encoded
+
+### 2. Signing Credentials
+- Algorithm: HMACSHA256
+- Uses symmetric key
+- Ensures token integrity
+
+### 3. Token Parameters
+```plaintext
+├── Issuer: "SurveyBasketApp"
+├── Audience: "SurveyBasketApp users"
+├── Claims: User-specific information
+├── Expiration: 30 hours
+└── Signing Credentials: HMACSHA256
+```
+
+## Implementation Notes
+
+1. **Security Considerations**
+   - Store secret key in configuration
+   - Use strong encryption key
+   - Implement token expiration
+   - Add necessary claims only
+
+2. **Future Improvements**
+   - Move configuration to appsettings.json
+   - Add role-based claims
+   - Implement refresh tokens
+   - Add token validation
+
+3. **Best Practices**
+   - Use singleton pattern for provider
+   - Implement proper error handling
+   - Use UTC for dates
+   - Follow security guidelines
+
+## Next Steps
+
+1. **Configuration**
+   - Move hardcoded values to configuration
+   - Implement options pattern
+   - Add environment-specific settings
+
+2. **Token Validation**
+   - Add middleware configuration
+   - Implement token validation
+   - Handle expired tokens
+
+3. **Additional Features**
+   - Role-based authorization
+   - Claims-based authorization
+   - Refresh token mechanism
+
+
+
 
 
 
